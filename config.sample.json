@@ -1,0 +1,64 @@
+{
+  "dry_run": true,
+  "min_profit_pct": 0.15,
+
+  "keys": {
+    "nobitex":  { "api_key": "db2dd6e8158697670998f6adc3beae28edd81be2" },
+    "ompfinex": { "api_key": "54da6dHdYahhNzIE2P7iEhgsQh0F4yh9nh5hU9sdIwhAhwhOgVvmZa5rnDhtbxV02LbvaeL" },
+    "wallex":   { "api_key": "18932|4GFI0KRnqGPk4W1oFz4Qq3PlAFUt7W5fITf6BDsK" },
+    "bitpin":   { "api_key": "onsNDmRrSGvXBwZeKKUYGq4a4OP1rTfrZjgYlZcHAP3y3ckqqxX9lkXJ0WufsHURxl41LBNfXghyxdmCCrURp6bDos23YTligHf4PSx67eBbnjAleZKpDBq7JaCxMpN3", "secret_key": "" }
+  },
+
+  "fees": {
+    "nobitex":  { "IRT":  { "maker": 0.0025, "taker": 0.0025 },
+                  "USDT": { "maker": 0.0010, "taker": 0.0013 } },
+    "ompfinex": { "maker": 0.0035, "taker": 0.0035 },
+    "wallex":   { "maker": 0.0020, "taker": 0.0020 },
+    "bitpin":   { "maker": 0.0030, "taker": 0.0035 }
+  },
+
+  "transfer_fees": {
+    "USDT": { "nobitex": 1.0,     "ompfinex": 1.0,     "wallex": 0.8,     "bitpin": 0.5 },
+    "BTC":  { "nobitex": 0.00005, "ompfinex": 0.00005, "wallex": 0.00005, "bitpin": 0.003 },
+    "ETH":  { "nobitex": 0.0004,  "ompfinex": 0.0004,  "wallex": 0.003,   "bitpin": 0.015 }
+  },
+
+  "trade_amount": {
+    "USDT_IRT": 500.0,
+    "BTC_USDT": 0.05,
+    "ETH_USDT": 1.0
+  },
+
+  "pairs": [
+    {
+      "enabled": true,
+      "name": "USDT/TMN",
+      "nobitex_symbol": "USDTIRT",
+      "omf_symbol": "USDTIRR",
+      "wallex_symbol": "USDTTMN",
+      "wallex_price_scale": 10.0,
+      "bitpin_symbol": "USDT_IRT",
+      "bitpin_price_scale": 10.0,
+      "market_type": "IRT",
+      "transfer_asset": "USDT",
+      "nb_src": "usdt",
+      "nb_dst": "rls",
+      "amount_key": "USDT_IRT"
+    },
+    {
+      "enabled": false,
+      "name": "BTC/USDT",
+      "nobitex_symbol": "BTCUSDT",
+      "omf_symbol": "BTCUSDT",
+      "wallex_symbol": "BTCUSDT",
+      "wallex_price_scale": 1.0,
+      "bitpin_symbol": "BTC_USDT",
+      "bitpin_price_scale": 1.0,
+      "market_type": "USDT",
+      "transfer_asset": "BTC",
+      "nb_src": "btc",
+      "nb_dst": "usdt",
+      "amount_key": "BTC_USDT"
+    }
+  ]
+}
