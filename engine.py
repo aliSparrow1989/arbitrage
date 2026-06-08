@@ -30,11 +30,11 @@ Config schema (every field optional — missing fields fall back to defaults):
     "nobitex":  {"IRT": {"taker": 0.0025, "maker": 0.0025},
                  "USDT": {"taker": 0.0013, "maker": 0.0010}},
     "ompfinex": {"taker": 0.0035, "maker": 0.0035},
-    "wallex":   {"taker": 0.0020, "maker": 0.0020},
+    "wallex":   {"taker": 0.0030, "maker": 0.0025},
     "bitpin":   {"taker": 0.0035, "maker": 0.0030}
   },
   "transfer_fees": {
-    "USDT": {"nobitex": 1.0, "ompfinex": 1.0, "wallex": 0.8, "bitpin": 0.5},
+    "USDT": {"nobitex": 0.7, "ompfinex": 0.7, "wallex": 0.8, "bitpin": 0.5},
     "BTC":  {"nobitex": 0.00005, ...},
     ...
   },
@@ -80,13 +80,13 @@ DEFAULT_CONFIG = {
         "nobitex":  {"IRT":  {"maker": 0.0025, "taker": 0.0025},
                      "USDT": {"maker": 0.0010, "taker": 0.0013}},
         "ompfinex": {"maker": 0.0035, "taker": 0.0035},
-        "wallex":   {"maker": 0.0020, "taker": 0.0020},
+        "wallex":   {"maker": 0.0025, "taker": 0.0030},
         "bitpin":   {"maker": 0.0030, "taker": 0.0035},
     },
 
     # withdrawal/transfer fee in ASSET units, keyed by [asset][source_exchange]
     "transfer_fees": {
-        "USDT": {"nobitex": 1.0,     "ompfinex": 1.0,     "wallex": 0.8,     "bitpin": 0.5},
+        "USDT": {"nobitex": 0.7,     "ompfinex": 0.7,     "wallex": 0.8,     "bitpin": 0.5},
         "BTC":  {"nobitex": 0.00005, "ompfinex": 0.00005, "wallex": 0.00005, "bitpin": 0.003},
         "ETH":  {"nobitex": 0.0004,  "ompfinex": 0.0004,  "wallex": 0.003,   "bitpin": 0.015},
         "BNB":  {"nobitex": 0.001,   "ompfinex": 0.001,   "wallex": 0.0005,  "bitpin": 0.001},
@@ -103,6 +103,30 @@ DEFAULT_CONFIG = {
         "XRP_USDT": 500.0,
         "SOL_USDT": 5.0,
         "TON_USDT": 100.0,
+    },
+
+    # minimum batch sizes used to amortize transfer fees across multiple trades
+    "min_usdt_transfer_amount": 500.0,
+    "min_irt_transfer_irr":     1_000_000_000,
+
+    # IRT bank-transfer fees (Rial) — withdrawal from sell side + deposit to buy side
+    "irt_withdrawal_flat_irr": {
+        "nobitex":  40000,
+        "wallex":   80000,
+        "ompfinex": 100000,
+        "bitpin":   60000,
+    },
+    "irt_deposit_fee_pct": {
+        "nobitex":  0.0001,
+        "wallex":   0.0001,
+        "ompfinex": 0.0,
+        "bitpin":   0.0,
+    },
+    "irt_deposit_flat_irr": {
+        "nobitex":  0,
+        "wallex":   0,
+        "ompfinex": 0,
+        "bitpin":   40000,
     },
 
     "pairs": [
@@ -136,14 +160,19 @@ class ArbitrageEngine(object):
         clients : dict {"nobitex": NobitexClient, "ompfinex": ..., ...}
         cfg     : the full parsed config dict
         """
-        self.clients = clients
-        self.cfg     = cfg
-        self.dry_run = bool(cfg.get("dry_run", True))
-        self.min_pct = float(cfg.get("min_profit_pct", 0.15))
-        self.fees    = cfg.get("fees", {})
-        self.tfees   = cfg.get("transfer_fees", {})
-        self.amounts = cfg.get("trade_amount", {})
-        self.log     = log
+        self.clients      = clients
+        self.cfg          = cfg
+        self.dry_run      = bool(cfg.get("dry_run", True))
+        self.min_pct      = float(cfg.get("min_profit_pct", 0.15))
+        self.fees         = cfg.get("fees", {})
+        self.tfees        = cfg.get("transfer_fees", {})
+        self.amounts      = cfg.get("trade_amount", {})
+        self.min_usdt_xfr = float(cfg.get("min_usdt_transfer_amount", 500.0))
+        self.min_irt_xfr  = float(cfg.get("min_irt_transfer_irr", 1_000_000_000))
+        self.irt_wd_flat  = cfg.get("irt_withdrawal_flat_irr", {})
+        self.irt_dep_pct  = cfg.get("irt_deposit_fee_pct", {})
+        self.irt_dep_flat = cfg.get("irt_deposit_flat_irr", {})
+        self.log          = log
 
     # ── fee helpers (now data-driven from cfg, not hardcoded) ────
 
@@ -158,7 +187,17 @@ class ArbitrageEngine(object):
         fee_units = self.tfees.get(asset, {}).get(source_exchange, 0.0)
         if amount <= 0:
             return 0.0
+        if asset == "USDT":
+            return (fee_units / self.min_usdt_xfr) * 100.0
         return (fee_units / amount) * 100.0
+
+    def _irt_transfer_fee_irr(self, sell_ex, buy_ex, amount_irr):
+        withdrawal = self.irt_wd_flat.get(sell_ex, 0)
+        deposit = (
+            self.irt_dep_flat.get(buy_ex, 0)
+            + int(self.irt_dep_pct.get(buy_ex, 0.0) * amount_irr)
+        )
+        return withdrawal + deposit
 
     # ── profit calculation ───────────────────────────────────────
 
@@ -190,13 +229,22 @@ class ArbitrageEngine(object):
 
         gross_pct     = (bid - ask) / ask * 100.0
         fee_total_pct = (buy_fee + sell_fee) * 100.0
-        net_pct       = (eff_sell - eff_buy) / eff_buy * 100.0 - transfer_pct
+
+        irt_fee_irr = 0
+        irt_fee_pct = 0.0
+        if mtype == "IRT":
+            amount_irr   = effective_amount * ask
+            full_irt_fee = self._irt_transfer_fee_irr(sell_ob.exchange, buy_ob.exchange, self.min_irt_xfr)
+            irt_fee_irr  = full_irt_fee * amount_irr / self.min_irt_xfr
+            irt_fee_pct  = irt_fee_irr / (effective_amount * eff_buy) * 100.0
+
+        net_pct = (eff_sell - eff_buy) / eff_buy * 100.0 - transfer_pct - irt_fee_pct
 
         spread_profit = effective_amount * (eff_sell - eff_buy)
         transfer_cost = (transfer_pct / 100.0) * effective_amount * ask
 
         if mtype == "IRT":
-            net_irt  = spread_profit - transfer_cost
+            net_irt  = spread_profit - transfer_cost - irt_fee_irr
             net_usdt = net_irt / ask if ask else 0.0
         else:
             net_usdt = spread_profit - transfer_cost
@@ -215,6 +263,8 @@ class ArbitrageEngine(object):
             "gross_pct":         gross_pct,
             "fee_total":         fee_total_pct,
             "transfer_pct":      transfer_pct,
+            "irt_fee_pct":       irt_fee_pct,
+            "irt_fee_irr":       irt_fee_irr,
             "net_pct":           net_pct,
             "net_irt":           net_irt,
             "net_usdt":          net_usdt,
@@ -264,6 +314,32 @@ class ArbitrageEngine(object):
                 opp = self.evaluate(buy_ob, sell_ob, cfg)
                 if opp is None:
                     continue
+
+                flag    = "*** OPPORTUNITY ***" if opp["net_pct"] >= self.min_pct else "."
+                liq_tag = (
+                    "  [liq=%.4g/%.4g]" % (opp["amount"], opp["max_amount"])
+                    if opp["liquidity_limited"] else ""
+                )
+                if opp["market_type"] == "IRT":
+                    self.log.info(
+                        "%s [%s] %s->%s  ask=%.0f  bid=%.0f  "
+                        "gross=%.2f%%  fees=%.2f%%  irt_f=%.3f%%  net=%.2f%%  "
+                        "net_irt=%.0f  net_usdt=%.2f%s",
+                        flag, opp["pair"], opp["buy_from"], opp["sell_to"],
+                        opp["buy_price"], opp["sell_price"],
+                        opp["gross_pct"], opp["fee_total"], opp["irt_fee_pct"],
+                        opp["net_pct"], opp["net_irt"], opp["net_usdt"], liq_tag,
+                    )
+                else:
+                    self.log.info(
+                        "%s [%s] %s->%s  ask=%.4f  bid=%.4f  "
+                        "gross=%.2f%%  fees=%.2f%%  net=%.2f%%  net_usdt=%.4f%s",
+                        flag, opp["pair"], opp["buy_from"], opp["sell_to"],
+                        opp["buy_price"], opp["sell_price"],
+                        opp["gross_pct"], opp["fee_total"],
+                        opp["net_pct"], opp["net_usdt"], liq_tag,
+                    )
+
                 if opp["net_pct"] >= self.min_pct:
                     opportunities.append(opp)
                     if best_candidate is None or opp["net_pct"] > best_candidate["net_pct"]:
