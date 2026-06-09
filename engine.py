@@ -60,6 +60,32 @@ from bitpin import BitpinClient
 log = logging.getLogger("engine")
 
 
+# ═══════════ TEST-DAILY-LIMIT (temporary, remove after testing) ═══════════
+#  DAILY TRADE COUNTER (persists across /run calls within one process).
+#  To remove: delete this whole block + every other TEST-DAILY-LIMIT marker.
+# ─────────────────────────────────────────────
+
+_DAILY_TRADES = {"date": None, "count": 0}
+
+
+def _today():
+    return time.strftime("%Y-%m-%d")
+
+
+def daily_trade_count():
+    """Current trade count for today; auto-resets when the date rolls over."""
+    if _DAILY_TRADES["date"] != _today():
+        _DAILY_TRADES["date"] = _today()
+        _DAILY_TRADES["count"] = 0
+    return _DAILY_TRADES["count"]
+
+
+def record_trade(n=1):
+    daily_trade_count()          # roll over to today if needed
+    _DAILY_TRADES["count"] += n
+# ═══════════ /TEST-DAILY-LIMIT ═══════════
+
+
 # ─────────────────────────────────────────────
 #  DEFAULT CONFIG (used when stdin is empty)
 # ─────────────────────────────────────────────
@@ -67,6 +93,12 @@ log = logging.getLogger("engine")
 DEFAULT_CONFIG = {
     "dry_run":        True,
     "min_profit_pct": 0.15,
+
+    # TEST-DAILY-LIMIT: max trades taken per day; 0 => unlimited (remove after testing)
+    "max_trades_per_day": 0,
+
+    # which exchanges to scan; empty/missing => all four
+    "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin"],
 
     "keys": {
         "nobitex":  {"api_key": ""},
@@ -164,6 +196,8 @@ class ArbitrageEngine(object):
         self.cfg          = cfg
         self.dry_run      = bool(cfg.get("dry_run", True))
         self.min_pct      = float(cfg.get("min_profit_pct", 0.15))
+        self.exchanges    = cfg.get("exchanges") or ["nobitex", "ompfinex", "wallex", "bitpin"]
+        self.max_trades   = int(cfg.get("max_trades_per_day", 0) or 0)  # TEST-DAILY-LIMIT
         self.fees         = cfg.get("fees", {})
         self.tfees        = cfg.get("transfer_fees", {})
         self.amounts      = cfg.get("trade_amount", {})
@@ -285,6 +319,8 @@ class ArbitrageEngine(object):
 
         tasks, labels = [], []
         for label, client, symbol, scale in plan:
+            if label not in self.exchanges:
+                continue   # exchange disabled in config
             if not symbol:
                 continue   # exchange does not list this pair
             tasks.append(client.get_orderbook(symbol, price_scale=scale))
@@ -416,7 +452,19 @@ class ArbitrageEngine(object):
             best, all_opps = result
             opportunities.extend(all_opps)
             if best:
+                # ── TEST-DAILY-LIMIT: gate execution behind the daily cap ──
+                if self.max_trades and daily_trade_count() >= self.max_trades:
+                    self.log.warning(
+                        "[%s] daily trade limit reached (%d/%d), skipping execution",
+                        cfg["name"], daily_trade_count(), self.max_trades)
+                    executions.append({
+                        "pair": cfg["name"], "opportunity": best,
+                        "result": {"executed": False, "skipped": "daily_limit_reached"},
+                    })
+                    continue
+                # ── /TEST-DAILY-LIMIT ──
                 ex = await self.execute(best, cfg)
+                record_trade()  # TEST-DAILY-LIMIT
                 executions.append({"pair": cfg["name"], "opportunity": best, "result": ex})
 
         return {
@@ -428,6 +476,8 @@ class ArbitrageEngine(object):
             "executions":    executions,
             "errors":        errors,
             "count":         len(opportunities),
+            "trades_today":      daily_trade_count(),    # TEST-DAILY-LIMIT
+            "max_trades_per_day": self.max_trades,       # TEST-DAILY-LIMIT
         }
 
 
