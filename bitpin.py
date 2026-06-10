@@ -32,6 +32,8 @@ class BitpinClient(ExchangeClient):
         url     = self.BASE + "/api/v1/usr/authenticate/"
         payload = {"api_key": self.api_key, "secret_key": self.secret_key}
         data    = await self._post_json(url, payload)
+        if "access" not in data:
+            raise RuntimeError("bitpin authenticate failed: " + str(data))
         self._access  = data["access"]
         self._refresh = data["refresh"]
 

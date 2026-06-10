@@ -4,7 +4,7 @@
 engine.py — Arbitrage coordinator.
 
 Reads ONE JSON config object from stdin, runs a single scan across all active
-pairs on all four exchanges, and writes ONE JSON result object to stdout.
+pairs on all five exchanges, and writes ONE JSON result object to stdout.
 All logs go to stderr so stdout stays clean for n8n.
 
 Run:
@@ -19,19 +19,23 @@ n8n integration:
 Config schema (every field optional — missing fields fall back to defaults):
 {
   "dry_run": true,
-  "min_profit_pct": 0.15,
+  "min_profit_pct": 0.2,
+  "min_profit_usdt": 0.04,
   "keys": {
     "nobitex":  {"api_key": "..."},
     "ompfinex": {"api_key": "..."},
     "wallex":   {"api_key": "..."},
-    "bitpin":   {"api_key": "...", "secret_key": "..."}
+    "bitpin":   {"api_key": "...", "secret_key": "..."},
+    "ramzinex": {"api_key": "...", "secret_key": "..."}
   },
   "fees": {
     "nobitex":  {"IRT": {"taker": 0.0025, "maker": 0.0025},
                  "USDT": {"taker": 0.0013, "maker": 0.0010}},
     "ompfinex": {"taker": 0.0035, "maker": 0.0035},
     "wallex":   {"taker": 0.0030, "maker": 0.0025},
-    "bitpin":   {"taker": 0.0035, "maker": 0.0030}
+    "bitpin":   {"taker": 0.0035, "maker": 0.0030},
+    "ramzinex": {"IRT": {"taker": 0.0025, "maker": 0.0020},
+                 "USDT": {"taker": 0.0010, "maker": 0.0010}}
   },
   "transfer_fees": {
     "USDT": {"nobitex": 0.7, "ompfinex": 0.7, "wallex": 0.8, "bitpin": 0.5},
@@ -55,35 +59,10 @@ from nobitex import NobitexClient
 from ompfinex import OmpFinexClient
 from wallex import WallexClient
 from bitpin import BitpinClient
+from ramzinex import RamzinexClient
 
 
 log = logging.getLogger("engine")
-
-
-# ═══════════ TEST-DAILY-LIMIT (temporary, remove after testing) ═══════════
-#  DAILY TRADE COUNTER (persists across /run calls within one process).
-#  To remove: delete this whole block + every other TEST-DAILY-LIMIT marker.
-# ─────────────────────────────────────────────
-
-_DAILY_TRADES = {"date": None, "count": 0}
-
-
-def _today():
-    return time.strftime("%Y-%m-%d")
-
-
-def daily_trade_count():
-    """Current trade count for today; auto-resets when the date rolls over."""
-    if _DAILY_TRADES["date"] != _today():
-        _DAILY_TRADES["date"] = _today()
-        _DAILY_TRADES["count"] = 0
-    return _DAILY_TRADES["count"]
-
-
-def record_trade(n=1):
-    daily_trade_count()          # roll over to today if needed
-    _DAILY_TRADES["count"] += n
-# ═══════════ /TEST-DAILY-LIMIT ═══════════
 
 
 # ─────────────────────────────────────────────
@@ -91,44 +70,45 @@ def record_trade(n=1):
 # ─────────────────────────────────────────────
 
 DEFAULT_CONFIG = {
-    "dry_run":        True,
-    "min_profit_pct": 0.15,
+    "dry_run":         True,
+    "min_profit_pct":  0.2,
+    "min_profit_usdt": 0.04,   # second gate: net profit in USDT must also clear this
 
-    # TEST-DAILY-LIMIT: max trades taken per day; 0 => unlimited (remove after testing)
-    "max_trades_per_day": 0,
-
-    # which exchanges to scan; empty/missing => all four
-    "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin"],
+    # which exchanges to scan; empty/missing => all five
+    "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"],
 
     "keys": {
         "nobitex":  {"api_key": ""},
         "ompfinex": {"api_key": ""},
         "wallex":   {"api_key": ""},
         "bitpin":   {"api_key": "", "secret_key": ""},
+        "ramzinex": {"api_key": "", "secret_key": ""},
     },
 
     # exchange trading fees (fraction, not percent)
     "fees": {
-        "nobitex":  {"IRT":  {"maker": 0.0025, "taker": 0.0025},
+        "nobitex":  {"IRT":  {"maker": 0.0017, "taker": 0.002},
                      "USDT": {"maker": 0.0010, "taker": 0.0013}},
         "ompfinex": {"maker": 0.0035, "taker": 0.0035},
         "wallex":   {"maker": 0.0025, "taker": 0.0030},
         "bitpin":   {"maker": 0.0030, "taker": 0.0035},
+        "ramzinex": {"IRT":  {"maker": 0.0020, "taker": 0.0025},
+                     "USDT": {"maker": 0.0010, "taker": 0.0010}},
     },
 
     # withdrawal/transfer fee in ASSET units, keyed by [asset][source_exchange]
     "transfer_fees": {
-        "USDT": {"nobitex": 0.7,     "ompfinex": 0.7,     "wallex": 0.8,     "bitpin": 0.5},
-        "BTC":  {"nobitex": 0.00005, "ompfinex": 0.00005, "wallex": 0.00005, "bitpin": 0.003},
-        "ETH":  {"nobitex": 0.0004,  "ompfinex": 0.0004,  "wallex": 0.003,   "bitpin": 0.015},
-        "BNB":  {"nobitex": 0.001,   "ompfinex": 0.001,   "wallex": 0.0005,  "bitpin": 0.001},
-        "XRP":  {"nobitex": 0.2,     "ompfinex": 0.2,     "wallex": 0.2,     "bitpin": 0.2},
-        "SOL":  {"nobitex": 0.01,    "ompfinex": 0.01,    "wallex": 0.01,    "bitpin": 0.01},
-        "TON":  {"nobitex": 0.1,                          "wallex": 0.02},
+        "USDT": {"nobitex": 0.7,     "ompfinex": 0.7,     "wallex": 0.8,     "bitpin": 0.5,   "ramzinex": 0.8},
+        "BTC":  {"nobitex": 0.00005, "ompfinex": 0.00005, "wallex": 0.00005, "bitpin": 0.003, "ramzinex": 0.00005},
+        "ETH":  {"nobitex": 0.0004,  "ompfinex": 0.0004,  "wallex": 0.003,   "bitpin": 0.015, "ramzinex": 0.004},
+        "BNB":  {"nobitex": 0.001,   "ompfinex": 0.001,   "wallex": 0.0005,  "bitpin": 0.001, "ramzinex": 0.001},
+        "XRP":  {"nobitex": 0.2,     "ompfinex": 0.2,     "wallex": 0.2,     "bitpin": 0.2,   "ramzinex": 0.2},
+        "SOL":  {"nobitex": 0.01,    "ompfinex": 0.01,    "wallex": 0.01,    "bitpin": 0.01,  "ramzinex": 0.01},
+        "TON":  {"nobitex": 0.1,                          "wallex": 0.02,                     "ramzinex": 0.1},
     },
 
     "trade_amount": {
-        "USDT_IRT": 500.0,
+        "USDT_IRT": 15.0,
         "BTC_USDT": 0.05,
         "ETH_USDT": 1.0,
         "BNB_USDT": 1.0,
@@ -147,18 +127,21 @@ DEFAULT_CONFIG = {
         "wallex":   80000,
         "ompfinex": 100000,
         "bitpin":   60000,
+        "ramzinex": 60000,
     },
     "irt_deposit_fee_pct": {
         "nobitex":  0.0001,
         "wallex":   0.0001,
         "ompfinex": 0.0,
         "bitpin":   0.0,
+        "ramzinex": 0.0,
     },
     "irt_deposit_flat_irr": {
         "nobitex":  0,
         "wallex":   0,
         "ompfinex": 0,
         "bitpin":   40000,
+        "ramzinex": 0,
     },
 
     "pairs": [
@@ -171,6 +154,7 @@ DEFAULT_CONFIG = {
             "wallex_price_scale": 10.0,
             "bitpin_symbol":      "USDT_IRT",
             "bitpin_price_scale": 10.0,
+            "ramzinex_pair_id":   11,
             "market_type":        "IRT",
             "transfer_asset":     "USDT",
             "nb_src":             "usdt",
@@ -195,9 +179,9 @@ class ArbitrageEngine(object):
         self.clients      = clients
         self.cfg          = cfg
         self.dry_run      = bool(cfg.get("dry_run", True))
-        self.min_pct      = float(cfg.get("min_profit_pct", 0.15))
-        self.exchanges    = cfg.get("exchanges") or ["nobitex", "ompfinex", "wallex", "bitpin"]
-        self.max_trades   = int(cfg.get("max_trades_per_day", 0) or 0)  # TEST-DAILY-LIMIT
+        self.min_pct      = float(cfg.get("min_profit_pct", 0.2))
+        self.min_usdt     = float(cfg.get("min_profit_usdt", 0.0))
+        self.exchanges    = cfg.get("exchanges") or ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"]
         self.fees         = cfg.get("fees", {})
         self.tfees        = cfg.get("transfer_fees", {})
         self.amounts      = cfg.get("trade_amount", {})
@@ -212,8 +196,8 @@ class ArbitrageEngine(object):
 
     def _exchange_fee(self, exchange, market_type, role="taker"):
         node = self.fees.get(exchange, {})
-        # nobitex is nested by market type; others are flat
-        if exchange == "nobitex":
+        # nobitex and ramzinex are nested by market type; others are flat
+        if exchange in ("nobitex", "ramzinex"):
             return node.get(market_type, {}).get(role, 0.0)
         return node.get(role, 0.0)
 
@@ -311,10 +295,11 @@ class ArbitrageEngine(object):
     async def scan(self, cfg):
         # (exchange_label, client, symbol, price_scale)
         plan = [
-            ("nobitex",  self.clients["nobitex"],  cfg.get("nobitex_symbol"), 1.0),
-            ("ompfinex", self.clients["ompfinex"], cfg.get("omf_symbol"),     1.0),
-            ("wallex",   self.clients["wallex"],   cfg.get("wallex_symbol"),  cfg.get("wallex_price_scale", 1.0)),
-            ("bitpin",   self.clients["bitpin"],   cfg.get("bitpin_symbol"),  cfg.get("bitpin_price_scale", 1.0)),
+            ("nobitex",  self.clients["nobitex"],  cfg.get("nobitex_symbol"),   1.0),
+            ("ompfinex", self.clients["ompfinex"], cfg.get("omf_symbol"),       1.0),
+            ("wallex",   self.clients["wallex"],   cfg.get("wallex_symbol"),    cfg.get("wallex_price_scale", 1.0)),
+            ("bitpin",   self.clients["bitpin"],   cfg.get("bitpin_symbol"),    cfg.get("bitpin_price_scale", 1.0)),
+            ("ramzinex", self.clients["ramzinex"], cfg.get("ramzinex_pair_id"), 1.0),
         ]
 
         tasks, labels = [], []
@@ -351,7 +336,8 @@ class ArbitrageEngine(object):
                 if opp is None:
                     continue
 
-                flag    = "*** OPPORTUNITY ***" if opp["net_pct"] >= self.min_pct else "."
+                qualifies = opp["net_pct"] >= self.min_pct and opp["net_usdt"] >= self.min_usdt
+                flag    = "*** OPPORTUNITY ***" if qualifies else "."
                 liq_tag = (
                     "  [liq=%.4g/%.4g]" % (opp["amount"], opp["max_amount"])
                     if opp["liquidity_limited"] else ""
@@ -376,7 +362,7 @@ class ArbitrageEngine(object):
                         opp["net_pct"], opp["net_usdt"], liq_tag,
                     )
 
-                if opp["net_pct"] >= self.min_pct:
+                if qualifies:
                     opportunities.append(opp)
                     if best_candidate is None or opp["net_pct"] > best_candidate["net_pct"]:
                         best_candidate = opp
@@ -408,6 +394,9 @@ class ArbitrageEngine(object):
             elif opp["buy_from"] == "bitpin":
                 out["buy"] = await self.clients["bitpin"].place_order(
                     cfg["bitpin_symbol"], "buy", opp["amount"], opp["buy_price"] / bitpin_scale)
+            elif opp["buy_from"] == "ramzinex":
+                out["buy"] = await self.clients["ramzinex"].place_order(
+                    cfg["ramzinex_pair_id"], "buy", opp["amount"], opp["buy_price"])
 
             if opp["sell_to"] == "nobitex":
                 out["sell"] = await self.clients["nobitex"].place_order(
@@ -421,6 +410,9 @@ class ArbitrageEngine(object):
             elif opp["sell_to"] == "bitpin":
                 out["sell"] = await self.clients["bitpin"].place_order(
                     cfg["bitpin_symbol"], "sell", opp["amount"], opp["sell_price"] / bitpin_scale)
+            elif opp["sell_to"] == "ramzinex":
+                out["sell"] = await self.clients["ramzinex"].place_order(
+                    cfg["ramzinex_pair_id"], "sell", opp["amount"], opp["sell_price"])
 
         except Exception as exc:
             self.log.error("order placement failed: %s", exc)
@@ -452,19 +444,7 @@ class ArbitrageEngine(object):
             best, all_opps = result
             opportunities.extend(all_opps)
             if best:
-                # ── TEST-DAILY-LIMIT: gate execution behind the daily cap ──
-                if self.max_trades and daily_trade_count() >= self.max_trades:
-                    self.log.warning(
-                        "[%s] daily trade limit reached (%d/%d), skipping execution",
-                        cfg["name"], daily_trade_count(), self.max_trades)
-                    executions.append({
-                        "pair": cfg["name"], "opportunity": best,
-                        "result": {"executed": False, "skipped": "daily_limit_reached"},
-                    })
-                    continue
-                # ── /TEST-DAILY-LIMIT ──
                 ex = await self.execute(best, cfg)
-                record_trade()  # TEST-DAILY-LIMIT
                 executions.append({"pair": cfg["name"], "opportunity": best, "result": ex})
 
         return {
@@ -476,8 +456,6 @@ class ArbitrageEngine(object):
             "executions":    executions,
             "errors":        errors,
             "count":         len(opportunities),
-            "trades_today":      daily_trade_count(),    # TEST-DAILY-LIMIT
-            "max_trades_per_day": self.max_trades,       # TEST-DAILY-LIMIT
         }
 
 
@@ -502,12 +480,15 @@ def build_clients(cfg):
     om_k = keys.get("ompfinex", {})
     wl_k = keys.get("wallex", {})
     bp_k = keys.get("bitpin", {})
+    rx_k = keys.get("ramzinex", {})
     return {
         "nobitex":  NobitexClient(api_key=nb_k.get("api_key", "")),
         "ompfinex": OmpFinexClient(api_key=om_k.get("api_key", "")),
         "wallex":   WallexClient(api_key=wl_k.get("api_key", "")),
         "bitpin":   BitpinClient(api_key=bp_k.get("api_key", ""),
                                  secret_key=bp_k.get("secret_key", "")),
+        "ramzinex": RamzinexClient(api_key=rx_k.get("api_key", ""),
+                                   secret_key=rx_k.get("secret_key", "")),
     }
 
 
@@ -555,7 +536,7 @@ def load_config_from_stdin():
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.WARNING,   # quiet by default; result goes to stdout as JSON
         format="%(asctime)s  %(levelname)-8s  %(message)s",
         datefmt="%H:%M:%S",
         stream=sys.stderr,

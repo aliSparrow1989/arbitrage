@@ -1,32 +1,73 @@
 {
-  "dry_run": true,
-  "min_profit_pct": 0.15,
+  "dry_run": false,
+  "min_profit_pct": 0.2,
+  "min_profit_usdt": 0.04,
+
+  "exchanges": ["nobitex", "bitpin"],
 
   "keys": {
     "nobitex":  { "api_key": "db2dd6e8158697670998f6adc3beae28edd81be2" },
     "ompfinex": { "api_key": "54da6dHdYahhNzIE2P7iEhgsQh0F4yh9nh5hU9sdIwhAhwhOgVvmZa5rnDhtbxV02LbvaeL" },
     "wallex":   { "api_key": "18932|4GFI0KRnqGPk4W1oFz4Qq3PlAFUt7W5fITf6BDsK" },
-    "bitpin":   { "api_key": "onsNDmRrSGvXBwZeKKUYGq4a4OP1rTfrZjgYlZcHAP3y3ckqqxX9lkXJ0WufsHURxl41LBNfXghyxdmCCrURp6bDos23YTligHf4PSx67eBbnjAleZKpDBq7JaCxMpN3", "secret_key": "" }
+    "bitpin":   { "api_key": "DgATeGvIqGSYEhI8Z0XL3mK5oRnDPBQPYKPrjp8PSleUEjjNWSOBmW5AL6BTEHZlFQrNGxMYn6kVEefHZgFJeIyUQSp5cPivEhS7h2sgu5gtZIwXYvM0mKSsh7XLjI17", "secret_key": "ZvIh7OQSKASybemE4FLK8qAVyQrVR099bWO6WJHf0D5YC4P4i66Lz0TLMOOy3lzrBnPa2Mq3qb17B27EBfVysC6i68vTa8wspP5aWR2sVB0HJmTsh9fxcDG0KEpTXFEn" },
+    "ramzinex": { "api_key": "ApiKeyxFChteg:fbc218469b52b852d798e02458778db405762ccad97951bb9345fa3112665484", "secret_key": "4d1f8041bf4d917bee32460cadb4dbfc" }
   },
 
   "fees": {
-    "nobitex":  { "IRT":  { "maker": 0.0025, "taker": 0.0025 },
+    "nobitex":  { "IRT":  { "maker": 0.0017, "taker": 0.002 },
                   "USDT": { "maker": 0.0010, "taker": 0.0013 } },
     "ompfinex": { "maker": 0.0035, "taker": 0.0035 },
-    "wallex":   { "maker": 0.0020, "taker": 0.0020 },
-    "bitpin":   { "maker": 0.0030, "taker": 0.0035 }
+    "wallex":   { "maker": 0.0025, "taker": 0.0030 },
+    "bitpin":   { "maker": 0.0030, "taker": 0.0035 },
+    "ramzinex": { "IRT":  { "maker": 0.0020, "taker": 0.0025 },
+                  "USDT": { "maker": 0.0010, "taker": 0.0010 } }
   },
 
   "transfer_fees": {
-    "USDT": { "nobitex": 1.0,     "ompfinex": 1.0,     "wallex": 0.8,     "bitpin": 0.5 },
-    "BTC":  { "nobitex": 0.00005, "ompfinex": 0.00005, "wallex": 0.00005, "bitpin": 0.003 },
-    "ETH":  { "nobitex": 0.0004,  "ompfinex": 0.0004,  "wallex": 0.003,   "bitpin": 0.015 }
+    "USDT": { "nobitex": 0.7,     "ompfinex": 0.7,     "wallex": 0.8,     "bitpin": 0.5,   "ramzinex": 0.8 },
+    "BTC":  { "nobitex": 0.00005, "ompfinex": 0.00005, "wallex": 0.00005, "bitpin": 0.003, "ramzinex": 0.00005 },
+    "ETH":  { "nobitex": 0.0004,  "ompfinex": 0.0004,  "wallex": 0.003,   "bitpin": 0.015, "ramzinex": 0.004 },
+    "BNB":  { "nobitex": 0.001,   "ompfinex": 0.001,   "wallex": 0.0005,  "bitpin": 0.001, "ramzinex": 0.001 },
+    "XRP":  { "nobitex": 0.2,     "ompfinex": 0.2,     "wallex": 0.2,     "bitpin": 0.2,   "ramzinex": 0.2 },
+    "SOL":  { "nobitex": 0.01,    "ompfinex": 0.01,    "wallex": 0.01,    "bitpin": 0.01,  "ramzinex": 0.01 },
+    "TON":  { "nobitex": 0.1,                          "wallex": 0.02,                     "ramzinex": 0.1 }
   },
 
   "trade_amount": {
-    "USDT_IRT": 500.0,
+    "USDT_IRT": 50.0,
     "BTC_USDT": 0.05,
-    "ETH_USDT": 1.0
+    "ETH_USDT": 1.0,
+    "BNB_USDT": 1.0,
+    "XRP_USDT": 500.0,
+    "SOL_USDT": 5.0,
+    "TON_USDT": 100.0
+  },
+
+  "min_usdt_transfer_amount": 500.0,
+  "min_irt_transfer_irr": 1000000000,
+
+  "irt_withdrawal_flat_irr": {
+    "nobitex":  40000,
+    "wallex":   80000,
+    "ompfinex": 100000,
+    "bitpin":   60000,
+    "ramzinex": 60000
+  },
+
+  "irt_deposit_fee_pct": {
+    "nobitex":  0.0001,
+    "wallex":   0.0001,
+    "ompfinex": 0.0,
+    "bitpin":   0.0,
+    "ramzinex": 0.0
+  },
+
+  "irt_deposit_flat_irr": {
+    "nobitex":  0,
+    "wallex":   0,
+    "ompfinex": 0,
+    "bitpin":   40000,
+    "ramzinex": 0
   },
 
   "pairs": [
@@ -39,6 +80,7 @@
       "wallex_price_scale": 10.0,
       "bitpin_symbol": "USDT_IRT",
       "bitpin_price_scale": 10.0,
+      "ramzinex_pair_id": 11,
       "market_type": "IRT",
       "transfer_asset": "USDT",
       "nb_src": "usdt",
@@ -54,11 +96,92 @@
       "wallex_price_scale": 1.0,
       "bitpin_symbol": "BTC_USDT",
       "bitpin_price_scale": 1.0,
+      "ramzinex_pair_id": 12,
       "market_type": "USDT",
       "transfer_asset": "BTC",
       "nb_src": "btc",
       "nb_dst": "usdt",
       "amount_key": "BTC_USDT"
+    },
+    {
+      "enabled": false,
+      "name": "ETH/USDT",
+      "nobitex_symbol": "ETHUSDT",
+      "omf_symbol": "ETHUSDT",
+      "wallex_symbol": "ETHUSDT",
+      "wallex_price_scale": 1.0,
+      "bitpin_symbol": "ETH_USDT",
+      "bitpin_price_scale": 1.0,
+      "ramzinex_pair_id": 13,
+      "market_type": "USDT",
+      "transfer_asset": "ETH",
+      "nb_src": "eth",
+      "nb_dst": "usdt",
+      "amount_key": "ETH_USDT"
+    },
+    {
+      "enabled": false,
+      "name": "BNB/USDT",
+      "nobitex_symbol": "BNBUSDT",
+      "omf_symbol": "BNBUSDT",
+      "wallex_symbol": "BNBUSDT",
+      "wallex_price_scale": 1.0,
+      "bitpin_symbol": "BNB_USDT",
+      "bitpin_price_scale": 1.0,
+      "ramzinex_pair_id": 18,
+      "market_type": "USDT",
+      "transfer_asset": "BNB",
+      "nb_src": "bnb",
+      "nb_dst": "usdt",
+      "amount_key": "BNB_USDT"
+    },
+    {
+      "enabled": false,
+      "name": "XRP/USDT",
+      "nobitex_symbol": "XRPUSDT",
+      "omf_symbol": "XRPUSDT",
+      "wallex_symbol": "XRPUSDT",
+      "wallex_price_scale": 1.0,
+      "bitpin_symbol": "XRP_USDT",
+      "bitpin_price_scale": 1.0,
+      "ramzinex_pair_id": 643,
+      "market_type": "USDT",
+      "transfer_asset": "XRP",
+      "nb_src": "xrp",
+      "nb_dst": "usdt",
+      "amount_key": "XRP_USDT"
+    },
+    {
+      "enabled": false,
+      "name": "SOL/USDT",
+      "nobitex_symbol": "SOLUSDT",
+      "omf_symbol": "SOLUSDT",
+      "wallex_symbol": "SOLUSDT",
+      "wallex_price_scale": 1.0,
+      "bitpin_symbol": "SOL_USDT",
+      "bitpin_price_scale": 1.0,
+      "ramzinex_pair_id": 218,
+      "market_type": "USDT",
+      "transfer_asset": "SOL",
+      "nb_src": "sol",
+      "nb_dst": "usdt",
+      "amount_key": "SOL_USDT"
+    },
+    {
+      "enabled": false,
+      "name": "TON/USDT",
+      "nobitex_symbol": "TONUSDT",
+      "omf_symbol": null,
+      "wallex_symbol": "TONUSDT",
+      "wallex_price_scale": 1.0,
+      "bitpin_symbol": null,
+      "bitpin_price_scale": 1.0,
+      "ramzinex_pair_id": 434,
+      "market_type": "USDT",
+      "transfer_asset": "TON",
+      "nb_src": "ton",
+      "nb_dst": "usdt",
+      "amount_key": "TON_USDT"
     }
   ]
 }

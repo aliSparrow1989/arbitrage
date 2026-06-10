@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from engine import DEFAULT_CONFIG, deep_merge, run
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,   # n8n only needs the result JSON; keep warnings/errors, drop per-route INFO chatter
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     datefmt="%H:%M:%S",
 )
