@@ -5,32 +5,15 @@ __pycache__/
 
 # Virtual environments
 venv/
-.env/
 .venv/
+.env/
 
 # Environment variables
 .env
 
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Type checker caches
-.mypy_cache/
-.pyre/
-.ruff_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints/
-
-# VS Code
-.vscode/
+# Local config holding real API keys
+config.json
+*/config.json
 
 # macOS
 .DS_Store
@@ -38,9 +21,13 @@ htmlcov/
 # Logs
 *.log
 
-# SQLite databases
-*.sqlite3
+# Type checker / test caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Temporary files
-*.tmp
-*.swp
+# Editors
+.vscode/
+.idea/

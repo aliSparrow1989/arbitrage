@@ -1,0 +1,12 @@
+{
+  "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"],
+  "include_zero": false,
+  "assets": [],
+  "keys": {
+    "nobitex":  {"api_key": "YOUR_NOBITEX_TOKEN"},
+    "ompfinex": {"api_key": "YOUR_OMPFINEX_TOKEN"},
+    "wallex":   {"api_key": "YOUR_WALLEX_API_KEY"},
+    "bitpin":   {"api_key": "YOUR_BITPIN_API_KEY", "secret_key": "YOUR_BITPIN_SECRET"},
+    "ramzinex": {"api_key": "YOUR_RAMZINEX_API_KEY", "secret_key": "YOUR_RAMZINEX_SECRET"}
+  }
+}
