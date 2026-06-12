@@ -53,7 +53,7 @@ services:
       - internal
 
   arbitrage:
-    build: ./arbitrage-api
+    build: ./arbitrage_main
     container_name: arbitrage
     restart: unless-stopped
     expose:
