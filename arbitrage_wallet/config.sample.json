@@ -1,6 +1,7 @@
 {
   "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"],
   "include_zero": false,
+  "include_raw": false,
   "assets": [],
   "keys": {
     "nobitex":  {"api_key": "YOUR_NOBITEX_TOKEN"},

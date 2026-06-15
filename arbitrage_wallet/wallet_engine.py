@@ -15,6 +15,7 @@ Config schema (every field optional — missing fields fall back to defaults):
 {
   "exchanges":    ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"],
   "include_zero": false,          # keep assets whose total balance is 0
+  "include_raw":  false,          # keep each exchange's raw payload in output
   "assets":       ["USDT","BTC"], # optional whitelist; empty/missing => all
   "keys": {
     "nobitex":  {"api_key": "..."},
@@ -56,6 +57,7 @@ ALL_EXCHANGES = ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"]
 DEFAULT_CONFIG = {
     "exchanges":    list(ALL_EXCHANGES),
     "include_zero": False,
+    "include_raw":  False,         # keep each exchange's raw payload in the output
     "assets":       [],            # empty => return every asset
     "keys": {
         "nobitex":  {"api_key": ""},
@@ -101,6 +103,58 @@ def build_clients(cfg):
 
 
 # ─────────────────────────────────────────────
+#  FIAT CANONICALIZATION
+# ─────────────────────────────────────────────
+#
+# The same Iranian fiat currency comes back under different tickers AND
+# different units across exchanges:
+#     nobitex -> RLS (Rial)   ompfinex -> IRR (Rial)
+#     wallex  -> TMN (Toman)  bitpin   -> IRT (Toman)
+# We collapse all of them into a single canonical "IRT" expressed in Toman,
+# so balances are directly comparable / summable. Rial tickers are divided by
+# 10 (1 Toman = 10 Rial); Toman tickers pass through unchanged.
+
+CANONICAL_FIAT = "IRT"
+FIAT_TO_TOMAN = {
+    "RLS": 0.1, "IRR": 0.1,    # Rial  -> Toman
+    "TMN": 1.0, "IRT": 1.0,    # Toman -> Toman (already canonical)
+}
+
+
+def canonicalize_fiat(balances):
+    """Merge every fiat ticker into `IRT` (Toman) and convert Rial -> Toman.
+
+    Crypto assets pass through untouched. If an exchange somehow reports two
+    fiat tickers, their (converted) amounts are summed into the single IRT entry.
+    """
+    out = {}
+    for asset, vals in balances.items():
+        factor = FIAT_TO_TOMAN.get(asset)
+        if factor is None:                       # crypto — keep as-is
+            entry = out.setdefault(asset, {"free": 0.0, "locked": 0.0, "total": 0.0})
+            free, locked = vals["free"], vals["locked"]
+        else:                                    # fiat — fold into IRT (Toman)
+            entry = out.setdefault(CANONICAL_FIAT, {"free": 0.0, "locked": 0.0, "total": 0.0})
+            free, locked = vals["free"] * factor, vals["locked"] * factor
+        entry["free"]   += free
+        entry["locked"] += locked
+        entry["total"]   = entry["free"] + entry["locked"]
+    return out
+
+
+def round_balances(balances):
+    """Round to a sane precision: whole Toman for IRT, 8 decimals for crypto.
+    Returns plain JSON numbers (int for IRT, float for crypto)."""
+    out = {}
+    for asset, vals in balances.items():
+        if asset == CANONICAL_FIAT:
+            out[asset] = {k: round(v) for k, v in vals.items()}        # whole Toman (int)
+        else:
+            out[asset] = {k: round(v, 8) for k, v in vals.items()}     # crypto
+    return out
+
+
+# ─────────────────────────────────────────────
 #  BALANCE FILTERING
 # ─────────────────────────────────────────────
 
@@ -126,6 +180,7 @@ async def run(cfg):
     enabled      = cfg.get("exchanges") or list(ALL_EXCHANGES)
     enabled      = [x for x in enabled if x in clients]
     include_zero = bool(cfg.get("include_zero", False))
+    include_raw  = bool(cfg.get("include_raw", False))
     assets       = cfg.get("assets", [])
 
     conn    = aiohttp.TCPConnector(limit=10)
@@ -147,15 +202,23 @@ async def run(cfg):
         if isinstance(raw, Exception):
             log.warning("[%s] wallet fetch failed: %s", label, raw)
             errors.append({"exchange": label, "error": str(raw)})
-            wallets[label] = {"balances": {}, "raw": None, "error": str(raw)}
+            entry = {"balances": {}, "error": str(raw)}
+            if include_raw:
+                entry["raw"] = None
+            wallets[label] = entry
             continue
         try:
             normalized = clients[label].normalize_wallets(raw)
         except Exception as exc:                       # normalization is best-effort
             log.warning("[%s] normalize failed: %s", label, exc)
             normalized = {}
-        balances = _filter_balances(normalized, include_zero, assets)
-        wallets[label] = {"balances": balances, "raw": raw}
+        canonical = canonicalize_fiat(normalized)
+        balances  = _filter_balances(canonical, include_zero, assets)
+        balances  = round_balances(balances)
+        entry = {"balances": balances}
+        if include_raw:
+            entry["raw"] = raw
+        wallets[label] = entry
 
     return {
         "timestamp": time.time(),

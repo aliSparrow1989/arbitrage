@@ -13,7 +13,7 @@ in as the "symbol" by the engine's scan plan). Prices are already in Rial (IRR),
 so ramzinex always uses price_scale=1.0.
 """
 
-from base import ExchangeClient, OrderBook, parse_levels, sort_asks, sort_bids
+from base import ExchangeClient, OrderBook, parse_levels, sort_asks, sort_bids, to_float
 
 
 class RamzinexClient(ExchangeClient):
@@ -27,6 +27,11 @@ class RamzinexClient(ExchangeClient):
         "USDT": 9, "BTC": 1, "ETH": 3,
         "XRP": 6, "BNB": 10, "SOL": 81, "TON": 166,
     }
+
+    # reverse map: currency_id -> symbol (for normalizing wallet rows).
+    # IRR is preferred for id 2 since ramzinex prices are quoted in Rial.
+    ID_TO_SYMBOL = {1: "BTC", 2: "IRR", 3: "ETH", 6: "XRP",
+                    9: "USDT", 10: "BNB", 81: "SOL", 166: "TON"}
 
     def __init__(self, api_key="", secret_key=""):
         super().__init__(api_key, secret_key)
@@ -95,3 +100,28 @@ class RamzinexClient(ExchangeClient):
                 continue
             return await resp.json()
         return {}
+
+    def normalize_wallets(self, raw):
+        """Ramzinex `summaryDesktop` returns rows shaped like:
+            {"currency_id": 9, "total_nr": <total>, "in_order_nr": <locked>}
+
+        The asset is a numeric currency_id (no symbol) and the field names are
+        unknown to the generic normalizer, so we map them here. Unknown ids are
+        kept under a "CID_<id>" label so nothing is silently dropped.
+        """
+        rows = raw.get("data") if isinstance(raw, dict) else raw
+        if not isinstance(rows, list):
+            return {}
+        out = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            cid = row.get("currency_id")
+            asset = self.ID_TO_SYMBOL.get(cid, "CID_%s" % cid)
+            total  = to_float(row.get("total_nr"))
+            locked = to_float(row.get("in_order_nr"))
+            free   = total - locked
+            if free < 0:
+                free = 0.0
+            out[asset] = {"free": free, "locked": locked, "total": total}
+        return out
