@@ -14,7 +14,7 @@ Quirks preserved from the original bot:
 
 import time
 
-from base import ExchangeClient, OrderBook, parse_levels, sort_asks, sort_bids
+from base import ExchangeClient, OrderBook, parse_levels, sort_asks, sort_bids, to_float
 
 
 class OmpFinexClient(ExchangeClient):
@@ -69,5 +69,33 @@ class OmpFinexClient(ExchangeClient):
         return await self._post_json(url, payload, headers=self._auth())
 
     async def get_wallets(self):
-        url = self.BASE + "/v1/user/wallets"
+        # NOTE: the endpoint is singular ("/wallet"); "/wallets" returns NOT_FOUND.
+        url = self.BASE + "/v1/user/wallet"
         return await self._get_json(url, headers=self._auth())
+
+    def normalize_wallets(self, raw):
+        """OmpFinex returns a list of rows under `data`, each shaped like:
+            {"currency": {"id": "USDT", "name": "<persian>", ...},
+             "balance": "11.29", "blocked_balance": "0"}
+
+        The generic normalizer would mis-read the asset as the Persian `name`
+        (it precedes `id` in the asset-key probe order), so we map it here:
+        asset = currency.id, free = balance, locked = blocked_balance.
+        """
+        rows = raw.get("data") if isinstance(raw, dict) else raw
+        if not isinstance(rows, list):
+            return {}
+        out = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            cur = row.get("currency")
+            asset = cur.get("id") if isinstance(cur, dict) else cur
+            if not asset:
+                continue
+            free   = to_float(row.get("balance"))
+            locked = to_float(row.get("blocked_balance"))
+            out[str(asset).upper()] = {
+                "free": free, "locked": locked, "total": free + locked,
+            }
+        return out

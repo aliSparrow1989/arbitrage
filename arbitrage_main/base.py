@@ -92,6 +92,123 @@ def sort_bids(levels):
     return sorted(levels, key=lambda r: r[0], reverse=True)
 
 
+# ── wallet-balance normalization helpers (shared by every client) ───
+#
+# Each exchange returns balances in its own shape, so normalization is
+# best-effort: we probe a set of commonly-used field names and always fall
+# back gracefully. ompfinex/ramzinex override `normalize_wallets` because their
+# raw shapes need special-casing.
+
+# field-name candidates, in priority order
+_FREE_KEYS   = ("free", "available", "balance", "value", "active_balance",
+                "activeBalance", "amount", "cash")
+_LOCKED_KEYS = ("locked", "blocked", "blockedBalance", "blocked_balance",
+                "frozen", "in_orders", "freeze")
+_ASSET_KEYS  = ("asset", "currency", "symbol", "coin", "currencySymbol", "code")
+_WRAPPER_KEYS = ("data", "results", "result", "wallets", "balances", "list", "funds")
+
+# The same Iranian fiat comes back under different tickers AND units across
+# exchanges (RLS/IRR are Rial; TMN/IRT are Toman). We collapse all of them into
+# a single canonical "IRT" expressed in Toman so balances are comparable; Rial
+# tickers are divided by 10 (1 Toman = 10 Rial).
+CANONICAL_FIAT = "IRT"
+FIAT_TO_TOMAN = {
+    "RLS": 0.1, "IRR": 0.1,    # Rial  -> Toman
+    "TMN": 1.0, "IRT": 1.0,    # Toman -> Toman (already canonical)
+}
+
+
+def to_float(v):
+    """Lenient float() — strings, None and junk all degrade to 0.0."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _pick(d, keys, default=None):
+    """Return the first present, non-None value among `keys`."""
+    for k in keys:
+        if k in d and d[k] is not None:
+            return d[k]
+    return default
+
+
+def _asset_symbol(row):
+    """Extract an upper-cased asset symbol from a balance row (string or nested)."""
+    val = _pick(row, _ASSET_KEYS)
+    if isinstance(val, dict):
+        val = _pick(val, ("symbol", "code", "name", "id"))
+    return str(val).upper() if val not in (None, "") else None
+
+
+def _unwrap_rows(raw):
+    """Drill through common wrapper keys (data/result/balances/...) until we
+    reach the list of rows or the {ASSET: {...}} map that holds balances."""
+    node = raw
+    for _ in range(5):                      # bounded descent, avoids cycles
+        if not isinstance(node, dict):
+            return node
+        nxt = None
+        for k in _WRAPPER_KEYS:
+            if isinstance(node.get(k), (list, dict)):
+                nxt = node[k]
+                break
+        if nxt is None:
+            return node                     # already an {ASSET: {...}} map
+        node = nxt
+    return node
+
+
+def _accumulate(out, asset, row):
+    free   = to_float(_pick(row, _FREE_KEYS, 0))
+    locked = to_float(_pick(row, _LOCKED_KEYS, 0))
+    entry = out.setdefault(asset, {"free": 0.0, "locked": 0.0, "total": 0.0})
+    entry["free"]   += free
+    entry["locked"] += locked
+    entry["total"]   = entry["free"] + entry["locked"]
+
+
+def normalize_wallet_rows(raw):
+    """Best-effort: turn any exchange wallet response into
+    {ASSET: {"free": float, "locked": float, "total": float}}.
+    Returns {} for anything it can't make sense of."""
+    rows = _unwrap_rows(raw)
+    out = {}
+    if isinstance(rows, dict):
+        for key, row in rows.items():
+            if not isinstance(row, dict):
+                continue
+            asset = _asset_symbol(row) or str(key).upper()
+            _accumulate(out, asset, row)
+    elif isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            asset = _asset_symbol(row)
+            if asset:
+                _accumulate(out, asset, row)
+    return out
+
+
+def canonicalize_fiat(balances):
+    """Merge every fiat ticker into `IRT` (Toman) and convert Rial -> Toman.
+    Crypto assets pass through untouched."""
+    out = {}
+    for asset, vals in balances.items():
+        factor = FIAT_TO_TOMAN.get(asset)
+        if factor is None:                       # crypto — keep as-is
+            entry = out.setdefault(asset, {"free": 0.0, "locked": 0.0, "total": 0.0})
+            free, locked = vals["free"], vals["locked"]
+        else:                                    # fiat — fold into IRT (Toman)
+            entry = out.setdefault(CANONICAL_FIAT, {"free": 0.0, "locked": 0.0, "total": 0.0})
+            free, locked = vals["free"] * factor, vals["locked"] * factor
+        entry["free"]   += free
+        entry["locked"] += locked
+        entry["total"]   = entry["free"] + entry["locked"]
+    return out
+
+
 # ─────────────────────────────────────────────
 #  ABSTRACT EXCHANGE CLIENT
 # ─────────────────────────────────────────────
@@ -153,3 +270,20 @@ class ExchangeClient(object):
 
     async def get_wallets(self):
         raise NotImplementedError
+
+    def normalize_wallets(self, raw):
+        """Map this exchange's raw wallet response to the common schema
+        {ASSET: {"free", "locked", "total"}}.
+
+        The shared `normalize_wallet_rows` handles most shapes; ompfinex and
+        ramzinex override this because their raw shapes need special-casing.
+        """
+        return normalize_wallet_rows(raw)
+
+    async def get_balances(self):
+        """Return free balances as {ASSET: free_amount}, with all Iranian fiat
+        canonicalized to "IRT" (Toman). Used by the engine to cap trade size to
+        what the wallet can actually fund on each leg."""
+        raw  = await self.get_wallets()
+        norm = canonicalize_fiat(self.normalize_wallets(raw))
+        return {asset: vals["free"] for asset, vals in norm.items()}

@@ -3,6 +3,9 @@
   "min_profit_pct": 0.2,
   "min_profit_usdt": 0.04,
 
+  "balance_safety_factor": 0.95,
+  "check_balances_in_dry_run": false,
+
   "exchanges": ["nobitex", "bitpin"],
 
   "keys": {
@@ -85,7 +88,10 @@
       "transfer_asset": "USDT",
       "nb_src": "usdt",
       "nb_dst": "rls",
-      "amount_key": "USDT_IRT"
+      "amount_key": "USDT_IRT",
+      "base_asset": "USDT",
+      "quote_asset": "IRT",
+      "quote_price_scale": 0.1
     },
     {
       "enabled": false,

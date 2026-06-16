@@ -160,6 +160,14 @@ DEFAULT_CONFIG = {
             "nb_src":             "usdt",
             "nb_dst":             "rls",
             "amount_key":         "USDT_IRT",
+            # balance-aware sizing: the base asset you move across exchanges and
+            # the quote currency you spend to buy it. quote_price_scale converts
+            # the engine's price unit to the wallet's balance unit:
+            #   IRT markets  -> price is Rial, balance is Toman  -> 0.1
+            #   USDT markets -> price is USDT, balance is USDT    -> 1.0
+            "base_asset":         "USDT",
+            "quote_asset":        "IRT",
+            "quote_price_scale":  0.1,
         },
         # add BTC/USDT, ETH/USDT, ... here or override the whole list from n8n
     ],
@@ -181,6 +189,12 @@ class ArbitrageEngine(object):
         self.dry_run      = bool(cfg.get("dry_run", True))
         self.min_pct      = float(cfg.get("min_profit_pct", 0.2))
         self.min_usdt     = float(cfg.get("min_profit_usdt", 0.0))
+        # safety buffer applied ONLY to balance-derived caps, so an order is not
+        # rejected for a hair's-worth of insufficient funds after price/fee moves
+        self.safety_factor = float(cfg.get("balance_safety_factor", 0.95))
+        # also fetch + apply balance caps during dry runs (logs the cap, never
+        # places orders) — handy for validating sizing with real keys
+        self.check_balances_dry = bool(cfg.get("check_balances_in_dry_run", False))
         self.exchanges    = cfg.get("exchanges") or ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"]
         self.fees         = cfg.get("fees", {})
         self.tfees        = cfg.get("transfer_fees", {})
@@ -240,35 +254,8 @@ class ArbitrageEngine(object):
 
         buy_fee  = self._exchange_fee(buy_ob.exchange,  mtype, "taker")
         sell_fee = self._exchange_fee(sell_ob.exchange, mtype, "taker")
-        transfer_pct = self._transfer_pct(cfg["transfer_asset"], sell_ob.exchange, effective_amount)
 
-        eff_buy  = ask * (1.0 + buy_fee)
-        eff_sell = bid * (1.0 - sell_fee)
-
-        gross_pct     = (bid - ask) / ask * 100.0
-        fee_total_pct = (buy_fee + sell_fee) * 100.0
-
-        irt_fee_irr = 0
-        irt_fee_pct = 0.0
-        if mtype == "IRT":
-            amount_irr   = effective_amount * ask
-            full_irt_fee = self._irt_transfer_fee_irr(sell_ob.exchange, buy_ob.exchange, self.min_irt_xfr)
-            irt_fee_irr  = full_irt_fee * amount_irr / self.min_irt_xfr
-            irt_fee_pct  = irt_fee_irr / (effective_amount * eff_buy) * 100.0
-
-        net_pct = (eff_sell - eff_buy) / eff_buy * 100.0 - transfer_pct - irt_fee_pct
-
-        spread_profit = effective_amount * (eff_sell - eff_buy)
-        transfer_cost = (transfer_pct / 100.0) * effective_amount * ask
-
-        if mtype == "IRT":
-            net_irt  = spread_profit - transfer_cost - irt_fee_irr
-            net_usdt = net_irt / ask if ask else 0.0
-        else:
-            net_usdt = spread_profit - transfer_cost
-            net_irt  = 0.0
-
-        return {
+        opp = {
             "pair":              cfg["name"],
             "buy_from":          buy_ob.exchange,
             "sell_to":           sell_ob.exchange,
@@ -278,17 +265,144 @@ class ArbitrageEngine(object):
             "max_amount":        max_amount,
             "ask_vol":           ask_vol,
             "bid_vol":           bid_vol,
-            "gross_pct":         gross_pct,
-            "fee_total":         fee_total_pct,
+            "gross_pct":         (bid - ask) / ask * 100.0,
+            "fee_total":         (buy_fee + sell_fee) * 100.0,
+            "market_type":       mtype,
+            "balance_limited":   False,
+        }
+        # fill all amount-dependent fields (net_pct/net_usdt/...) from opp["amount"]
+        return self._recompute_profit(opp, cfg)
+
+    def _recompute_profit(self, opp, cfg):
+        """(Re)compute every amount-dependent field in `opp` from opp["amount"],
+        using opp's prices/exchanges/market_type. Mutates and returns opp.
+
+        Shared by evaluate() (initial sizing) and apply_balance_limit() (after a
+        balance cap shrinks the amount) so the profit math lives in one place.
+        """
+        amount  = opp["amount"]
+        ask     = opp["buy_price"]
+        bid     = opp["sell_price"]
+        mtype   = opp["market_type"]
+        buy_ex  = opp["buy_from"]
+        sell_ex = opp["sell_to"]
+
+        buy_fee  = self._exchange_fee(buy_ex,  mtype, "taker")
+        sell_fee = self._exchange_fee(sell_ex, mtype, "taker")
+        transfer_pct = self._transfer_pct(cfg["transfer_asset"], sell_ex, amount)
+
+        eff_buy  = ask * (1.0 + buy_fee)
+        eff_sell = bid * (1.0 - sell_fee)
+
+        irt_fee_irr = 0
+        irt_fee_pct = 0.0
+        if mtype == "IRT":
+            amount_irr   = amount * ask
+            full_irt_fee = self._irt_transfer_fee_irr(sell_ex, buy_ex, self.min_irt_xfr)
+            irt_fee_irr  = full_irt_fee * amount_irr / self.min_irt_xfr
+            if amount > 0 and eff_buy > 0:
+                irt_fee_pct = irt_fee_irr / (amount * eff_buy) * 100.0
+
+        net_pct = (eff_sell - eff_buy) / eff_buy * 100.0 - transfer_pct - irt_fee_pct
+
+        spread_profit = amount * (eff_sell - eff_buy)
+        transfer_cost = (transfer_pct / 100.0) * amount * ask
+
+        if mtype == "IRT":
+            net_irt  = spread_profit - transfer_cost - irt_fee_irr
+            net_usdt = net_irt / ask if ask else 0.0
+        else:
+            net_usdt = spread_profit - transfer_cost
+            net_irt  = 0.0
+
+        opp.update({
             "transfer_pct":      transfer_pct,
             "irt_fee_pct":       irt_fee_pct,
             "irt_fee_irr":       irt_fee_irr,
             "net_pct":           net_pct,
             "net_irt":           net_irt,
             "net_usdt":          net_usdt,
-            "market_type":       mtype,
-            "liquidity_limited": effective_amount < max_amount,
-        }
+            "liquidity_limited": amount < opp["max_amount"],
+        })
+        return opp
+
+    # ── balance-aware sizing (caps amount to what wallets can fund) ──
+
+    async def fetch_leg_balances(self, opp):
+        """Fetch FRESH free balances for the two exchanges of this opportunity,
+        concurrently. Returns {exchange: {ASSET: free}}; an exchange that errors
+        comes back as {} so the caller treats it as zero-funds."""
+        legs = [opp["buy_from"], opp["sell_to"]]
+        raw  = await asyncio.gather(
+            *[self.clients[ex].get_balances() for ex in legs],
+            return_exceptions=True,
+        )
+        out = {}
+        for ex, result in zip(legs, raw):
+            if isinstance(result, Exception):
+                self.log.warning("[%s] could not fetch %s balances: %s",
+                                 opp["pair"], ex, result)
+                out[ex] = {}
+            else:
+                out[ex] = result
+        return out
+
+    def apply_balance_limit(self, opp, cfg, balances):
+        """Shrink opp["amount"] to what wallet balances allow on BOTH legs and
+        re-validate the profit gates. Returns the updated opp, or None if the
+        opportunity no longer clears min_pct / min_usdt (then it is skipped).
+
+        Both legs are sized in the base asset:
+          * buy  leg: spend quote on buy_ex  -> max base = quote_bal / buy_price
+          * sell leg: sell base on sell_ex   -> max base = base_bal
+        The 0.95 safety buffer is applied ONLY to these balance caps, so when
+        funds are plentiful the size is unchanged from evaluate()'s sizing.
+        """
+        buy_ex  = opp["buy_from"]
+        sell_ex = opp["sell_to"]
+        base_asset  = cfg.get("base_asset") or cfg["transfer_asset"]
+        quote_asset = cfg.get("quote_asset", "IRT" if opp["market_type"] == "IRT" else "USDT")
+        quote_scale = float(cfg.get("quote_price_scale",
+                                    0.1 if opp["market_type"] == "IRT" else 1.0))
+
+        quote_bal = balances.get(buy_ex, {}).get(quote_asset, 0.0)
+        base_bal  = balances.get(sell_ex, {}).get(base_asset, 0.0)
+
+        buy_price = opp["buy_price"]
+        # price is in engine units; * quote_scale converts it to the wallet's
+        # quote-balance unit, so quote_bal / (price*scale) is in base-asset units
+        buy_cap  = quote_bal / (buy_price * quote_scale) if buy_price > 0 and quote_scale > 0 else 0.0
+        sell_cap = base_bal
+
+        prev   = opp["amount"]
+        capped = min(prev, self.safety_factor * buy_cap, self.safety_factor * sell_cap)
+
+        if capped <= 0:
+            self.log.warning(
+                "[%s] %s->%s SKIP: no executable size  (buy needs %s on %s=%.6g, "
+                "sell needs %s on %s=%.6g)",
+                opp["pair"], buy_ex, sell_ex,
+                quote_asset, buy_ex, quote_bal, base_asset, sell_ex, base_bal)
+            return None
+
+        opp["amount"]          = capped
+        opp["balance_limited"] = capped < prev
+        self._recompute_profit(opp, cfg)
+
+        if opp["net_pct"] < self.min_pct or opp["net_usdt"] < self.min_usdt:
+            self.log.warning(
+                "[%s] %s->%s SKIP after balance cap: amount=%.6g  net=%.3f%%  "
+                "net_usdt=%.4f  below gate (min %.3f%% / %.4f)",
+                opp["pair"], buy_ex, sell_ex, capped,
+                opp["net_pct"], opp["net_usdt"], self.min_pct, self.min_usdt)
+            return None
+
+        if opp["balance_limited"]:
+            self.log.info(
+                "[%s] %s->%s balance-capped %.6g -> %.6g  (buy %s=%.6g, sell %s=%.6g)",
+                opp["pair"], buy_ex, sell_ex, prev, capped,
+                quote_asset, quote_bal, base_asset, base_bal)
+        return opp
 
     # ── scan one pair across all available exchanges ─────────────
 
@@ -443,9 +557,22 @@ class ArbitrageEngine(object):
                 continue
             best, all_opps = result
             opportunities.extend(all_opps)
-            if best:
-                ex = await self.execute(best, cfg)
-                executions.append({"pair": cfg["name"], "opportunity": best, "result": ex})
+            if not best:
+                continue
+
+            # Cap the trade to what BOTH exchanges' wallets can actually fund,
+            # using FRESH balances fetched right now (only for the two legs of
+            # this opportunity). This prevents the one-sided fill that happens
+            # when one leg is rejected for insufficient balance. Balances are
+            # fetched per-execution, not per-scan, to keep request volume low.
+            if not self.dry_run or self.check_balances_dry:
+                leg_balances = await self.fetch_leg_balances(best)
+                best = self.apply_balance_limit(best, cfg, leg_balances)
+                if best is None:
+                    continue   # not fundable / no longer profitable -> skip
+
+            ex = await self.execute(best, cfg)
+            executions.append({"pair": cfg["name"], "opportunity": best, "result": ex})
 
         return {
             "timestamp":     time.time(),
