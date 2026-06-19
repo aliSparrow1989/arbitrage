@@ -6,9 +6,9 @@ services:
     expose:
       - "27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: n8n
-      MONGO_INITDB_ROOT_PASSWORD: lcNkFwcwGzjX
-      MONGO_INITDB_DATABASE: n8n_db
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -22,12 +22,12 @@ services:
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: n8n
-      ME_CONFIG_MONGODB_ADMINPASSWORD: lcNkFwcwGzjX
-      ME_CONFIG_MONGODB_URL: mongodb://n8n:lcNkFwcwGzjX@mongodb:27017/
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/
       ME_CONFIG_BASICAUTH: "true"
-      ME_CONFIG_BASICAUTH_USERNAME: n8n
-      ME_CONFIG_BASICAUTH_PASSWORD: lcNkFwcwGzjX
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_USER}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_PASSWORD}
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_PORT: 27017
     depends_on:
@@ -42,10 +42,10 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - GENERIC_TIMEZONE=Asia/Tehran
-      - N8N_PROTOCOL=http
-      - N8N_HOST=https://hl.latinoscloud.com
-      - WEBHOOK_URL=https://hl.latinoscloud.com/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - N8N_HOST=${N8N_HOST}
+      - WEBHOOK_URL=${WEBHOOK_URL}
     volumes:
       - n8n_data:/home/node/.n8n
       - /home/n8n/images:/files

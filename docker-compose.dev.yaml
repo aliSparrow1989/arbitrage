@@ -1,0 +1,7 @@
+services:
+  arbitrage:
+    ports:
+      - "8000:8000"
+  arbitrage_wallet:
+    ports:
+      - "8001:8000"
