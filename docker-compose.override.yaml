@@ -1,0 +1,15 @@
+# محیط dev (مک). Docker این فایل را با نام override خودکار سوار می‌کند.
+# فقط برای دیباگ لوکال پورت‌ها را روی هاست باز می‌کند.
+services:
+  n8n:
+    ports:
+      - "5678:5678"
+  mongo-express:
+    ports:
+      - "8081:8081"
+  arbitrage:
+    ports:
+      - "8000:8000"
+  arbitrage_wallet:
+    ports:
+      - "8001:8000"
