@@ -1,7 +1,35 @@
+# محیط production (سرور hamidia).
+# Caddy تنها سرویسی است که روی هاست پورت باز می‌کند (80/443) و TLS را با
+# Cloudflare DNS-01 challenge خودکار می‌گیرد. n8n و mongo-express فقط داخل
+# شبکه‌ی داکر در دسترس‌اند و Caddy از داخل به آن‌ها reverse_proxy می‌زند.
 services:
-  n8n:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    container_name: caddy
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:5678:5678"
-  mongo-express:
-    ports:
-      - "127.0.0.1:8081:8081"
+      - "80:80"
+      - "443:443"
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - ACME_EMAIL=${ACME_EMAIL}
+      - N8N_HOST=${N8N_HOST}
+      - MONGO_DOMAIN=${MONGO_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - /home/n8n/images:/srv/images:ro
+    depends_on:
+      - n8n
+      - mongo-express
+    networks:
+      - internal
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

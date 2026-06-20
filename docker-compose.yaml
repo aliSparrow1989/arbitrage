@@ -19,8 +19,8 @@ services:
     image: mongo-express:1.0.2
     container_name: mongo-express
     restart: unless-stopped
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"        # فقط داخل شبکه داکر — Caddy از همین‌جا بهش وصل میشه
     environment:
       ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}
       ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}
@@ -39,8 +39,8 @@ services:
     image: n8nio/n8n
     container_name: n8n
     restart: unless-stopped
-    ports:
-      - "5678:5678"
+    expose:
+      - "5678"        # فقط داخل شبکه داکر — Caddy از همین‌جا بهش وصل میشه
     environment:
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
       - N8N_PROTOCOL=${N8N_PROTOCOL}
