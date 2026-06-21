@@ -50,6 +50,7 @@ Config schema (every field optional — missing fields fall back to defaults):
 import asyncio
 import json
 import logging
+import random
 import sys
 import time
 
@@ -73,6 +74,16 @@ DEFAULT_CONFIG = {
     "dry_run":         True,
     "min_profit_pct":  0.2,
     "min_profit_usdt": 0.04,   # second gate: net profit in USDT must also clear this
+
+    # Perturb each live order's size DOWNWARD by up to this percent so two
+    # otherwise-identical orders fired in consecutive scans don't collide on the
+    # exchange's duplicate-order guard (e.g. Nobitex rejects duplicates for 10s).
+    # 0 disables it. amount_jitter_decimals = how many decimals the venue accepts.
+    # amount_dedup_window_sec = avoid reusing a size for this long (> the
+    # exchange's duplicate window) so no two recent orders share a size.
+    "amount_jitter_pct":       1.0,
+    "amount_jitter_decimals":  2,
+    "amount_dedup_window_sec": 15.0,
 
     # which exchanges to scan; empty/missing => all five
     "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"],
@@ -178,6 +189,13 @@ DEFAULT_CONFIG = {
 #  ARBITRAGE ENGINE
 # ─────────────────────────────────────────────
 
+# Recently used sizes per route: {sig: [(timestamp, amount), ...]}. Kept at MODULE
+# level so it survives across the fresh ArbitrageEngine that run() builds for every
+# /run cycle — that's what lets a new order avoid EVERY size still inside the
+# exchange's duplicate window (not just the immediately previous one).
+_RECENT_JITTERED = {}
+
+
 class ArbitrageEngine(object):
     def __init__(self, clients, cfg):
         """
@@ -192,6 +210,13 @@ class ArbitrageEngine(object):
         # safety buffer applied ONLY to balance-derived caps, so an order is not
         # rejected for a hair's-worth of insufficient funds after price/fee moves
         self.safety_factor = float(cfg.get("balance_safety_factor", 0.95))
+        # size jitter to dodge exchange duplicate-order rejection (see _jitter_amount)
+        self.amount_jitter_pct      = float(cfg.get("amount_jitter_pct", 0.0))
+        self.amount_jitter_decimals = int(cfg.get("amount_jitter_decimals", 2))
+        # avoid reusing a size for at least this long (must exceed the exchange's
+        # duplicate window — Nobitex ignores duplicate orders for 10s)
+        self.amount_dedup_window    = float(cfg.get("amount_dedup_window_sec", 15.0))
+        self._jitter_rng = random.Random()
         # also fetch + apply balance caps during dry runs (logs the cap, never
         # places orders) — handy for validating sizing with real keys
         self.check_balances_dry = bool(cfg.get("check_balances_in_dry_run", False))
@@ -485,11 +510,54 @@ class ArbitrageEngine(object):
 
     # ── execute (places real orders only when dry_run is False) ──
 
+    def _jitter_amount(self, opp, cfg):
+        """Nudge opp["amount"] DOWNWARD by up to amount_jitter_pct so this order's
+        size differs from the previous one on the same route. Exchanges such as
+        Nobitex reject an identical order (same side+price+amount) for ~10s
+        ("DuplicateOrder"); when that hit only the buy leg, the sell leg still
+        filled and left a one-sided position (see execute.txt). A unique size
+        sidesteps the guard. Jittering DOWN (never up) keeps the size inside the
+        liquidity/balance caps already applied, and the SAME value is used for
+        both legs so the hedge stays matched. Re-rolls until the size differs from
+        EVERY size used on this route within amount_dedup_window seconds — so it
+        can't collide with the previous order *or* the one before it while either
+        is still inside the exchange's duplicate window.
+
+        Mutates opp["amount"] and refreshes the amount-dependent profit fields so
+        the recorded execution reflects what was actually sent."""
+        base = opp["amount"]
+        if self.amount_jitter_pct <= 0 or base <= 0:
+            return
+        sig  = (opp["pair"], opp["buy_from"], opp["sell_to"])
+        span = base * self.amount_jitter_pct / 100.0
+        now  = time.time()
+
+        # drop sizes that have aged out of the duplicate window, block the rest
+        recent  = [(ts, amt) for ts, amt in _RECENT_JITTERED.get(sig, [])
+                   if now - ts < self.amount_dedup_window]
+        blocked = {amt for _, amt in recent}
+
+        jittered = base
+        for _ in range(20):
+            cand = round(base - self._jitter_rng.uniform(0.0, span),
+                         self.amount_jitter_decimals)
+            if cand > 0 and cand not in blocked:
+                jittered = cand
+                break
+
+        recent.append((now, jittered))
+        _RECENT_JITTERED[sig] = recent
+        opp["amount"] = jittered
+        self._recompute_profit(opp, cfg)
+
     async def execute(self, opp, cfg):
         if self.dry_run:
             self.log.warning("[DRY RUN] would execute %s -> %s  net=%.3f%%  net_usdt=%.4f",
                              opp["buy_from"], opp["sell_to"], opp["net_pct"], opp["net_usdt"])
             return {"executed": False, "dry_run": True}
+
+        # unique size per cycle so the order isn't rejected as a duplicate
+        self._jitter_amount(opp, cfg)
 
         wallex_scale = cfg.get("wallex_price_scale", 1.0)
         bitpin_scale = cfg.get("bitpin_price_scale", 1.0)
