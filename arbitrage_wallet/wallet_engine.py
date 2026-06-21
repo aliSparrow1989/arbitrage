@@ -18,7 +18,7 @@ Config schema (every field optional — missing fields fall back to defaults):
   "include_raw":  false,          # keep each exchange's raw payload in output
   "assets":       ["USDT","BTC"], # optional whitelist; empty/missing => all
   "keys": {
-    "nobitex":  {"api_key": "..."},
+    "nobitex":  {"api_key": "...", "secret_key": "..."},
     "ompfinex": {"api_key": "..."},
     "wallex":   {"api_key": "..."},
     "bitpin":   {"api_key": "...", "secret_key": "..."},
@@ -60,7 +60,7 @@ DEFAULT_CONFIG = {
     "include_raw":  False,         # keep each exchange's raw payload in the output
     "assets":       [],            # empty => return every asset
     "keys": {
-        "nobitex":  {"api_key": ""},
+        "nobitex":  {"api_key": "", "secret_key": ""},
         "ompfinex": {"api_key": ""},
         "wallex":   {"api_key": ""},
         "bitpin":   {"api_key": "", "secret_key": ""},
@@ -92,7 +92,8 @@ def build_clients(cfg):
     bp_k = keys.get("bitpin", {})
     rx_k = keys.get("ramzinex", {})
     return {
-        "nobitex":  NobitexClient(api_key=nb_k.get("api_key", "")),
+        "nobitex":  NobitexClient(api_key=nb_k.get("api_key", ""),
+                                  secret_key=nb_k.get("secret_key", "")),
         "ompfinex": OmpFinexClient(api_key=om_k.get("api_key", "")),
         "wallex":   WallexClient(api_key=wl_k.get("api_key", "")),
         "bitpin":   BitpinClient(api_key=bp_k.get("api_key", ""),

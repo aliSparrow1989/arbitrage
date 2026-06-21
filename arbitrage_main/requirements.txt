@@ -1,3 +1,4 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 aiohttp>=3.9
+pynacl>=1.5

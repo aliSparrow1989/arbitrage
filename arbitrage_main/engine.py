@@ -22,7 +22,7 @@ Config schema (every field optional — missing fields fall back to defaults):
   "min_profit_pct": 0.2,
   "min_profit_usdt": 0.04,
   "keys": {
-    "nobitex":  {"api_key": "..."},
+    "nobitex":  {"api_key": "...", "secret_key": "..."},
     "ompfinex": {"api_key": "..."},
     "wallex":   {"api_key": "..."},
     "bitpin":   {"api_key": "...", "secret_key": "..."},
@@ -78,7 +78,7 @@ DEFAULT_CONFIG = {
     "exchanges": ["nobitex", "ompfinex", "wallex", "bitpin", "ramzinex"],
 
     "keys": {
-        "nobitex":  {"api_key": ""},
+        "nobitex":  {"api_key": "", "secret_key": ""},
         "ompfinex": {"api_key": ""},
         "wallex":   {"api_key": ""},
         "bitpin":   {"api_key": "", "secret_key": ""},
@@ -609,7 +609,8 @@ def build_clients(cfg):
     bp_k = keys.get("bitpin", {})
     rx_k = keys.get("ramzinex", {})
     return {
-        "nobitex":  NobitexClient(api_key=nb_k.get("api_key", "")),
+        "nobitex":  NobitexClient(api_key=nb_k.get("api_key", ""),
+                                  secret_key=nb_k.get("secret_key", "")),
         "ompfinex": OmpFinexClient(api_key=om_k.get("api_key", "")),
         "wallex":   WallexClient(api_key=wl_k.get("api_key", "")),
         "bitpin":   BitpinClient(api_key=bp_k.get("api_key", ""),

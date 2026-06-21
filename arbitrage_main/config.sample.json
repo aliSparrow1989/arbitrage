@@ -9,7 +9,7 @@
   "exchanges": ["nobitex", "bitpin"],
 
   "keys": {
-    "nobitex":  { "api_key": "db2dd6e8158697670998f6adc3beae28edd81be2" },
+    "nobitex":  { "api_key": "db2dd6e8158697670998f6adc3beae28edd81be2", "secret_key": "" },
     "ompfinex": { "api_key": "54da6dHdYahhNzIE2P7iEhgsQh0F4yh9nh5hU9sdIwhAhwhOgVvmZa5rnDhtbxV02LbvaeL" },
     "wallex":   { "api_key": "18932|4GFI0KRnqGPk4W1oFz4Qq3PlAFUt7W5fITf6BDsK" },
     "bitpin":   { "api_key": "DgATeGvIqGSYEhI8Z0XL3mK5oRnDPBQPYKPrjp8PSleUEjjNWSOBmW5AL6BTEHZlFQrNGxMYn6kVEefHZgFJeIyUQSp5cPivEhS7h2sgu5gtZIwXYvM0mKSsh7XLjI17", "secret_key": "ZvIh7OQSKASybemE4FLK8qAVyQrVR099bWO6WJHf0D5YC4P4i66Lz0TLMOOy3lzrBnPa2Mq3qb17B27EBfVysC6i68vTa8wspP5aWR2sVB0HJmTsh9fxcDG0KEpTXFEn" },
