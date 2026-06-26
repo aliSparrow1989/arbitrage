@@ -57,7 +57,7 @@ services:
     container_name: arbitrage
     restart: unless-stopped
     expose:
-      - "8000"        # فقط داخل شبکه داکر — n8n مستقیم بهش وصل میشه
+      - "8000"        
     networks:
       - internal
 
@@ -66,7 +66,7 @@ services:
     container_name: arbitrage_wallet
     restart: unless-stopped
     expose:
-      - "8000"        # فقط داخل شبکه داکر — n8n مستقیم بهش وصل میشه
+      - "8000"        
     networks:
       - internal
 
