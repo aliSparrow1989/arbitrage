@@ -1,0 +1,31 @@
+# تنظیمات static تِرِفیک (Traefik).
+# جایگزین Caddy: TLS را با ArvanCloud DNS-01 challenge از Let's Encrypt می‌گیرد.
+# ورودی‌ها را از docker labels روی سرویس‌ها (docker provider) می‌خواند.
+
+entryPoints:
+  # همه‌ی HTTP به HTTPS ریدایرکت می‌شود.
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+certificatesResolvers:
+  arvanresolver:
+    acme:
+      # ایمیل ثبت ACME (غیرمحرمانه). مقدار واقعی ACME_EMAIL را اینجا بگذار.
+      email: you@example.com
+      storage: /letsencrypt/acme.json
+      # در حالت proxy آروان فقط DNS-01 کار می‌کند (HTTP-01 به لبه‌ی آروان می‌خورد).
+      # کلید API از env: ARVANCLOUD_API_KEY خوانده می‌شود.
+      dnsChallenge:
+        provider: arvancloud
+
+providers:
+  docker:
+    # فقط سرویس‌هایی که traefik.enable=true دارند route می‌شوند.
+    exposedByDefault: false
