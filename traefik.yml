@@ -17,8 +17,8 @@ entryPoints:
 certificatesResolvers:
   arvanresolver:
     acme:
-      # ایمیل ثبت ACME (غیرمحرمانه). مقدار واقعی ACME_EMAIL را اینجا بگذار.
-      email: you@example.com
+      # ایمیل ثبت ACME (غیرمحرمانه).
+      email: hamidia.ali@gmail.com
       storage: /letsencrypt/acme.json
       # در حالت proxy آروان فقط DNS-01 کار می‌کند (HTTP-01 به لبه‌ی آروان می‌خورد).
       # کلید API از env: ARVANCLOUD_API_KEY خوانده می‌شود.
