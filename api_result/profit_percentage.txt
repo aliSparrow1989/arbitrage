@@ -1,0 +1,112 @@
+[
+  {
+    "timestamp": 1783492900.8845832,
+    "dry_run": false,
+    "threshold_pct": 0.2,
+    "active_pairs": [
+      "USDT/TMN"
+    ],
+    "opportunities": [
+      {
+        "pair": "USDT/TMN",
+        "buy_from": "nobitex",
+        "sell_to": "bitpin",
+        "buy_price": 1783500,
+        "sell_price": 1807580,
+        "amount": 33.92,
+        "max_amount": 50,
+        "ask_vol": 6485.2,
+        "bid_vol": 528.33,
+        "gross_pct": 1.3501541911970842,
+        "fee_total": 0.455,
+        "market_type": "IRT",
+        "balance_limited": true,
+        "transfer_pct": 0.1,
+        "irt_fee_pct": 0.015972048914399805,
+        "irt_fee_irr": 9679.4112,
+        "net_pct": 0.7738445315315694,
+        "net_irt": 469072.5907200104,
+        "net_usdt": 0.2630067792094255,
+        "liquidity_limited": true
+      }
+    ],
+    "executions": [
+      {
+        "pair": "USDT/TMN",
+        "opportunity": {
+          "pair": "USDT/TMN",
+          "buy_from": "nobitex",
+          "sell_to": "bitpin",
+          "buy_price": 1783500,
+          "sell_price": 1807580,
+          "amount": 33.92,
+          "max_amount": 50,
+          "ask_vol": 6485.2,
+          "bid_vol": 528.33,
+          "gross_pct": 1.3501541911970842,
+          "fee_total": 0.455,
+          "market_type": "IRT",
+          "balance_limited": true,
+          "transfer_pct": 0.1,
+          "irt_fee_pct": 0.015972048914399805,
+          "irt_fee_irr": 9679.4112,
+          "net_pct": 0.7738445315315694,
+          "net_irt": 469072.5907200104,
+          "net_usdt": 0.2630067792094255,
+          "liquidity_limited": true
+        },
+        "result": {
+          "executed": true,
+          "buy": {
+            "status": "ok",
+            "order": {
+              "type": "buy",
+              "execution": "Limit",
+              "tradeType": "Spot",
+              "srcCurrency": "Tether",
+              "dstCurrency": "﷼",
+              "price": "1783500",
+              "amount": "33.92",
+              "totalPrice": "0",
+              "totalOrderPrice": "60496320",
+              "matchedAmount": "0",
+              "unmatchedAmount": "33.92",
+              "clientOrderId": null,
+              "id": 5562341131,
+              "status": "Active",
+              "partial": false,
+              "fee": "0",
+              "user": "09331713989",
+              "created_at": "2026-07-08T06:41:40.595695+00:00",
+              "market": "USDT-RLS",
+              "averagePrice": "0"
+            }
+          },
+          "sell": {
+            "id": 2440064202,
+            "symbol": "USDT_IRT",
+            "type": "limit",
+            "side": "sell",
+            "price": "180758",
+            "average_price": "0",
+            "stop_price": null,
+            "oco_target_price": null,
+            "base_amount": "33.92",
+            "quote_amount": "6131311",
+            "identifier": "242113bd-395f-4fb2-9b59-327b818817bf",
+            "state": "active",
+            "closed_at": null,
+            "created_at": "2026-07-08T10:11:40.801978+03:30",
+            "dealed_base_amount": "0.00",
+            "dealed_quote_amount": "0",
+            "req_to_cancel": false,
+            "commission": "0.0000"
+          }
+        }
+      }
+    ],
+    "errors": [],
+    "count": 1,
+    "config_source": "merged"
+  }
+]
