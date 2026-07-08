@@ -1,19 +1,16 @@
 name: Deploy to production
 
-# هر بار که چیزی به main پوش/merge شود، deploy خودکار اجرا می‌شود.
 on:
   push:
     branches: [main]
 
-# جلوگیری از اجرای هم‌زمان دو deploy؛ اگر یکی در حال اجراست، بعدی صبر می‌کند.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 jobs:
   deploy:
-    # روی runnerِ self-hosted که روی خود سرور نصب شده اجرا می‌شود.
-    runs-on: self-hosted
+    runs-on: [self-hosted, production]
     steps:
       - name: Pull latest code and redeploy
         run: |

@@ -1,19 +1,15 @@
 name: Deploy to staging
 
-# هر بار که چیزی به stage پوش شود، روی سرور staging deploy می‌شود.
 on:
   push:
     branches: [stage]
 
-# جلوگیری از اجرای هم‌زمان دو deploy روی staging.
 concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
 jobs:
   deploy:
-    # فقط runnerِ سرور staging (که با لیبل «staging» نصب شده) این job را برمی‌دارد.
-    # runnerِ سرور production این لیبل را ندارد، پس هیچ‌وقت اینجا اجرا نمی‌شود.
     runs-on: [self-hosted, staging]
     steps:
       - name: Pull latest code and redeploy
