@@ -2,6 +2,9 @@
 # جایگزین Caddy: TLS را با ArvanCloud DNS-01 challenge از Let's Encrypt می‌گیرد.
 # ورودی‌ها را از docker labels روی سرویس‌ها (docker provider) می‌خواند.
 
+log:
+  level: INFO
+
 entryPoints:
   # همه‌ی HTTP به HTTPS ریدایرکت می‌شود.
   web:
