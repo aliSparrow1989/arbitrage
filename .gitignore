@@ -15,6 +15,13 @@ venv/
 config.json
 */config.json
 
+# Data backups (large tgz dumps) — never commit
+data/
+
+# Traefik ACME storage (private key + certs) — bind mount, never commit
+traefik_letsencrypt/
+*.bak
+
 # macOS
 .DS_Store
 
