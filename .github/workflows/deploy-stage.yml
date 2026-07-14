@@ -1,22 +1,22 @@
-name: Deploy to production
+name: Deploy to staging
 
 on:
   push:
-    branches: [main]
+    branches: [stage]
 
 concurrency:
-  group: deploy-production
+  group: deploy-staging
   cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: [self-hosted, production]
+    runs-on: [self-hosted, staging]
     steps:
       - name: Pull latest code and redeploy
         run: |
           set -e
           cd ~/arbitrage
-          git fetch origin main
-          git reset --hard origin/main
+          git fetch origin stage
+          git reset --hard origin/stage
           docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build
           docker image prune -f

@@ -1,0 +1,25 @@
+log:
+  level: ERROR
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+certificatesResolvers:
+  arvanresolver:
+    acme:
+      email: hamidia.ali@gmail.com
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: arvancloud
+
+providers:
+  docker:
+    exposedByDefault: false

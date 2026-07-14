@@ -1,0 +1,38 @@
+[
+  {
+    "timestamp": 1782997320.6465886,
+    "dry_run": false,
+    "threshold_pct": 0.2,
+    "active_pairs": [
+      "USDT/TMN"
+    ],
+    "opportunities": [
+      {
+        "pair": "USDT/TMN",
+        "buy_from": "nobitex",
+        "sell_to": "bitpin",
+        "buy_price": 1758550,
+        "sell_price": 1777490,
+        "amount": 6.721712830459754,
+        "max_amount": 50,
+        "ask_vol": 1292.56,
+        "bid_vol": 126.35,
+        "gross_pct": 1.0770236842853487,
+        "fee_total": 0.455,
+        "market_type": "IRT",
+        "balance_limited": true,
+        "transfer_pct": 0.1,
+        "irt_fee_pct": 0.0159720489143998,
+        "irt_fee_irr": 1891.2748956808,
+        "net_pct": 0.5019545974238595,
+        "net_irt": 59457.90229447443,
+        "net_usdt": 0.03381075448208719,
+        "liquidity_limited": true
+      }
+    ],
+    "executions": [],
+    "errors": [],
+    "count": 1,
+    "config_source": "merged"
+  }
+]
