@@ -47,10 +47,24 @@ services:
       - N8N_HOST=${N8N_HOST}
       - WEBHOOK_URL=${WEBHOOK_URL}
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      # نگه‌داری اجراها: ۳ روز اخیر یا حداکثر ۵۰۰۰ اجرا (هرکدام زودتر رسید)
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=72
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=5000
+      # هم موفق‌ها هم خطاها ذخیره شوند؛ ولی progress و اجراهای دستی نه
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=false
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=false
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
       - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   arbitrage:
     build: ./arbitrage_main
