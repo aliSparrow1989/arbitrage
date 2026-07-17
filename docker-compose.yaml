@@ -20,7 +20,7 @@ services:
     container_name: mongo-express
     restart: unless-stopped
     expose:
-      - "8081"        # فقط داخل شبکه داکر — Traefik از همین‌جا بهش وصل میشه
+      - "8081"
     environment:
       ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}
       ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}
@@ -40,17 +40,29 @@ services:
     container_name: n8n
     restart: unless-stopped
     expose:
-      - "5678"        # فقط داخل شبکه داکر — Traefik از همین‌جا بهش وصل میشه
+      - "5678"
     environment:
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
       - N8N_PROTOCOL=${N8N_PROTOCOL}
       - N8N_HOST=${N8N_HOST}
       - WEBHOOK_URL=${WEBHOOK_URL}
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=24
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=2500
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=false
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=false
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
       - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   arbitrage:
     build: ./arbitrage_main
