@@ -374,8 +374,9 @@ class ArbitrageEngine(object):
 
     def apply_balance_limit(self, opp, cfg, balances):
         """Shrink opp["amount"] to what wallet balances allow on BOTH legs and
-        re-validate the profit gates. Returns the updated opp, or None if the
-        opportunity no longer clears min_pct / min_usdt (then it is skipped).
+        re-validate the profit gates. Returns (opp, None) on success, or
+        (None, reason) — a Persian skip reason — if the opportunity can no
+        longer be funded or no longer clears min_pct / min_usdt.
 
         Both legs are sized in the base asset:
           * buy  leg: spend quote on buy_ex  -> max base = quote_bal / buy_price
@@ -408,7 +409,11 @@ class ArbitrageEngine(object):
                 "sell needs %s on %s=%.6g)",
                 opp["pair"], buy_ex, sell_ex,
                 quote_asset, buy_ex, quote_bal, base_asset, sell_ex, base_bal)
-            return None
+            return None, (
+                "کمبود موجودی: سایز قابل‌اجرا صفر شد "
+                f"(برای خرید به {quote_asset} در {buy_ex} نیاز است، موجودی={quote_bal:.6g}؛ "
+                f"برای فروش به {base_asset} در {sell_ex} نیاز است، موجودی={base_bal:.6g})"
+            )
 
         opp["amount"]          = capped
         opp["balance_limited"] = capped < prev
@@ -420,14 +425,18 @@ class ArbitrageEngine(object):
                 "net_usdt=%.4f  below gate (min %.3f%% / %.4f)",
                 opp["pair"], buy_ex, sell_ex, capped,
                 opp["net_pct"], opp["net_usdt"], self.min_pct, self.min_usdt)
-            return None
+            return None, (
+                "پس از محدود شدن سایز با موجودی، سود زیر حد آستانه افتاد: "
+                f"سایز={capped:.6g}، net={opp['net_pct']:.3f}٪، net_usdt={opp['net_usdt']:.4f} "
+                f"(حداقل لازم {self.min_pct:.3f}٪ و {self.min_usdt:.4f})"
+            )
 
         if opp["balance_limited"]:
             self.log.info(
                 "[%s] %s->%s balance-capped %.6g -> %.6g  (buy %s=%.6g, sell %s=%.6g)",
                 opp["pair"], buy_ex, sell_ex, prev, capped,
                 quote_asset, quote_bal, base_asset, base_bal)
-        return opp
+        return opp, None
 
     # ── scan one pair across all available exchanges ─────────────
 
@@ -616,17 +625,18 @@ class ArbitrageEngine(object):
 
         opportunities = []
         executions    = []
-        errors        = []
+        skipped       = []   # opportunity found but no real buy — reason in Persian
+        exceptions    = []   # a pair's scan crashed outright
 
         for result, cfg in zip(results, active_pairs):
             if isinstance(result, Exception):
                 self.log.error("[%s] error: %s", cfg["name"], result)
-                errors.append({"pair": cfg["name"], "error": str(result)})
+                exceptions.append({"pair": cfg["name"], "exception": str(result)})
                 continue
             best, all_opps = result
             opportunities.extend(all_opps)
             if not best:
-                continue
+                continue   # no qualifying opportunity at all -> nothing to skip
 
             # Cap the trade to what BOTH exchanges' wallets can actually fund,
             # using FRESH balances fetched right now (only for the two legs of
@@ -635,12 +645,34 @@ class ArbitrageEngine(object):
             # fetched per-execution, not per-scan, to keep request volume low.
             if not self.dry_run or self.check_balances_dry:
                 leg_balances = await self.fetch_leg_balances(best)
-                best = self.apply_balance_limit(best, cfg, leg_balances)
-                if best is None:
+                capped, skip_reason = self.apply_balance_limit(best, cfg, leg_balances)
+                if capped is None:
+                    skipped.append({
+                        "pair":     cfg["name"],
+                        "buy_from": best["buy_from"],
+                        "sell_to":  best["sell_to"],
+                        "reason":   skip_reason,
+                    })
                     continue   # not fundable / no longer profitable -> skip
+                best = capped
 
             ex = await self.execute(best, cfg)
             executions.append({"pair": cfg["name"], "opportunity": best, "result": ex})
+
+            # If the execution did not place a real buy, record why (in Persian).
+            if not ex.get("executed"):
+                if ex.get("dry_run"):
+                    reason = "حالت آزمایشی (dry_run) فعال است؛ سفارش واقعی ثبت نشد"
+                elif ex.get("error"):
+                    reason = f"خطا هنگام ثبت سفارش: {ex['error']}"
+                else:
+                    reason = f"execution did not place an order: {ex}"
+                skipped.append({
+                    "pair":     cfg["name"],
+                    "buy_from": best["buy_from"],
+                    "sell_to":  best["sell_to"],
+                    "reason":   reason,
+                })
 
         return {
             "timestamp":     time.time(),
@@ -649,7 +681,8 @@ class ArbitrageEngine(object):
             "active_pairs":  [p["name"] for p in active_pairs],
             "opportunities": opportunities,
             "executions":    executions,
-            "errors":        errors,
+            "skipped":       skipped,
+            "exceptions":    exceptions,
             "count":         len(opportunities),
         }
 
@@ -696,8 +729,8 @@ async def run(cfg):
     if not active_pairs:
         return {
             "timestamp": time.time(),
-            "error": "no active pairs (set enabled=true on at least one pair)",
-            "opportunities": [], "executions": [], "errors": [], "count": 0,
+            "exception": "no active pairs (set enabled=true on at least one pair)",
+            "opportunities": [], "executions": [], "skipped": [], "exceptions": [], "count": 0,
         }
 
     conn    = aiohttp.TCPConnector(limit=10)
